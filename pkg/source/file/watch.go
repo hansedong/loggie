@@ -444,8 +444,25 @@ func (w *Watcher) scanPaths(pipelineName string, sourceName string, paths []stri
 			log.Info("[pipeline(%s)-source(%s)]: glob path(%s) fail: %v", pipelineName, sourceName, path, err)
 			continue
 		}
+		matchedMap := make(map[string]struct{})
+		// check if the file is renamed or created and send the related event
 		for _, fileName := range matches {
+			matchedMap[fileName] = struct{}{}
 			w.createOrRename(fileName, watchTask, jobFields)
+		}
+		// remove files that are no longer matched and send `REMOVE` event
+		for _, job := range w.allJobs {
+			if job.task.pipelineName == pipelineName && job.task.sourceName == sourceName {
+				if job.IsDelete() || job.IsStop() {
+					continue
+				}
+				if _, ok := matchedMap[job.filename]; !ok {
+					w.eventBus(jobEvent{
+						opt: REMOVE,
+						job: job,
+					})
+				}
+			}
 		}
 	}
 }
